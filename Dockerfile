@@ -1,6 +1,7 @@
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 RUN apt-get -y update && \
+	apt-get -y upgrade && \
 	apt-get install -y \
 		libavutil-dev \
 		libavformat-dev \
@@ -26,38 +27,41 @@ RUN apt-get -y update && \
 		build-essential \
 		wget \
 		git \
-		gtk-doc-tools && \
+		meson \
+	gtk-doc-tools && \
 	apt-get clean && \
 	rm -rf /var/lib/apt/lists/*
 
+WORKDIR /tmp
+RUN wget https://github.com/cisco/libsrtp/archive/v2.6.0.tar.gz && \
+	tar xfv v2.6.0.tar.gz
+RUN git clone https://gitlab.freedesktop.org/libnice/libnice
 
-RUN cd /tmp && \
-	wget https://github.com/cisco/libsrtp/archive/v2.3.0.tar.gz && \
-	tar xfv v2.3.0.tar.gz && \
-	cd libsrtp-2.3.0 && \
-	./configure --prefix=/usr --enable-openssl && \
+WORKDIR /tmp/libsrtp-2.6.0
+RUN ./configure --prefix=/usr --enable-openssl && \
 	make shared_library && \
 	make install
 
-RUN cd /tmp && \
-	git clone https://gitlab.freedesktop.org/libnice/libnice && \
-	cd libnice && \
-	git checkout 0.1.17 && \
-	./autogen.sh && \
-	./configure --prefix=/usr && \
-	make && \
-	make install
+WORKDIR /tmp/libnice
+RUN git checkout 0.1.22 && \
+	mkdir builddir && \
+	meson builddir && \
+	ninja -C builddir && \
+	ninja -C builddir install
+
+#RUN find /usr/lib -name '*nice*'
+#RUN find /usr/local/lib -name '*nice*'
 
 COPY . /usr/local/src/janus-gateway
 
-RUN cd /usr/local/src/janus-gateway && \
-	sh autogen.sh && \
+WORKDIR /usr/local/src/janus-gateway
+RUN sh autogen.sh && \
 	./configure --enable-post-processing --prefix=/usr/local && \
 	make && \
 	make install && \
 	make configs
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 ARG BUILD_DATE="undefined"
 ARG GIT_BRANCH="undefined"
@@ -69,24 +73,24 @@ LABEL git_branch=${GIT_BRANCH}
 LABEL git_commit=${GIT_COMMIT}
 LABEL version=${VERSION}
 
-RUN apt-get -y update && \
+RUN apt-get -y update && apt-get -y upgrade && \
 	apt-get install -y \
-		libmicrohttpd12 \
-		libavutil-dev \
-		libavformat-dev \
 		libavcodec-dev \
-		libjansson4 \
-		libssl1.1 \
-		libsofia-sip-ua0 \
-		libglib2.0-0 \
-		libopus0 \
-		libogg0 \
-		libcurl4 \
-		liblua5.3-0 \
+		libavformat-dev \
+		libavutil-dev \
 		libconfig9 \
-		libusrsctp1 \
-		libwebsockets16 \
+		libcurl4 \
+		libglib2.0-0 \
+		libjansson4 \
+		liblua5.3-0 \
+		libmicrohttpd12 \
 		libnanomsg5 \
+		libogg0 \
+		libopus0 \
+		libssl-dev \
+		libsofia-sip-ua0 \
+		libusrsctp-dev \
+		libwebsockets-dev \
 		librabbitmq4 && \
 	apt-get clean && \
 	rm -rf /var/lib/apt/lists/*
@@ -94,10 +98,14 @@ RUN apt-get -y update && \
 COPY --from=0 /usr/lib/libsrtp2.so.1 /usr/lib/libsrtp2.so.1
 RUN ln -s /usr/lib/libsrtp2.so.1 /usr/lib/libsrtp2.so
 
-COPY --from=0 /usr/lib/libnice.la /usr/lib/libnice.la
-COPY --from=0 /usr/lib/libnice.so.10.10.0 /usr/lib/libnice.so.10.10.0
-RUN ln -s /usr/lib/libnice.so.10.10.0 /usr/lib/libnice.so.10
-RUN ln -s /usr/lib/libnice.so.10.10.0 /usr/lib/libnice.so
+#COPY --from=0 /usr/lib/libnice.la /usr/lib/libnice.la
+COPY --from=0 /usr/local/lib/x86_64-linux-gnu/libnice.so.10.14.0 /usr/local/lib/x86_64-linux-gnu/libnice.so.10.14.0
+RUN ln -s /usr/local/lib/x86_64-linux-gnu/libnice.so.10.14.0 /usr/local/lib/x86_64-linux-gnu/libnice.so.10
+RUN ln -s /usr/local/lib/x86_64-linux-gnu/libnice.so.10.14.0 /usr/local/lib/x86_64-linux-gnu/libnice.so
+
+RUN ln -s /usr/local/lib/x86_64-linux-gnu/libnice.so.10.14.0 /usr/lib/libnice.so.10.14.0
+RUN ln -s /usr/local/lib/x86_64-linux-gnu/libnice.so.10.14.0 /usr/lib/libnice.so.10
+RUN ln -s /usr/local/lib/x86_64-linux-gnu/libnice.so.10.14.0 /usr/lib/libnice.so
 
 COPY --from=0 /usr/local/bin/janus /usr/local/bin/janus
 COPY --from=0 /usr/local/bin/janus-pp-rec /usr/local/bin/janus-pp-rec
